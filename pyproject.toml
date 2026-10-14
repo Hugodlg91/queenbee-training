@@ -39,7 +39,7 @@ known-first-party = ["queenbee", "tests"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src"]
+files = ["src", "bonus"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "legacy", "labs"]
