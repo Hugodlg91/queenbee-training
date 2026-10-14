@@ -1,10 +1,40 @@
 @startuml c4_container
 !include <C4/C4_Container>
-title Queen Bee — Conteneurs et frontières de confiance (C4 niveau 2, à compléter)
-' 1. Acteurs : Person(...) et System_Ext(...)
-' 2. Une Boundary(...) par zone de confiance (TB1, TB2...)
-' 3. Container(...) / ContainerDb(...) dans chaque zone
-' 4. Rel(source, destination, "quoi", "protocole") pour chaque flux de la matrice
-Person(analyst, "Analyste SOC")
-System_Ext(agent, "Agent (abeille)", "Collecte les logs sur les hôtes")
+title Queen Bee — Conteneurs et frontières de confiance (C4 niveau 2)
+
+Person(analyst, "Analyste SOC", "Trie et ferme les incidents (rôle analyst)")
+Person(admin, "Administrateur", "Configure règles, seuils et secrets")
+Person_Ext(attacker, "Attaquant", "Forge des lignes de log, flood, injections")
+
+Boundary(hosts, "Hôtes surveillés (non fiables)") {
+  System_Ext(agent, "Agent (abeille)", "Collecte les logs sshd, signe en HMAC-SHA256")
+}
+
+Boundary(queen, "Reine Queen Bee (zone de confiance)") {
+  Container(ingest, "Ingestion", "Python", "Parse, vérifie HMAC, taille ≤ 4 Kio, construit des SecurityEvent valides")
+  Container(detect, "Détection", "Python, domaine", "RuleSet : brute force, scan de ports -> Alert")
+  Container(incidents, "Service incidents", "Python, application", "Cas d'usage + contrôle du rôle")
+  Container(boot, "Démarrage", "bootstrap.py + config.py", "Builder Settings figé, fabrique de règles")
+}
+
+Boundary(data, "Données") {
+  ContainerDb(db, "Base incidents", "SQLite", "Incidents, statuts ; requêtes paramétrées uniquement")
+}
+
+Boundary(ext, "Systèmes externes") {
+  System_Ext(smtp, "Notification SOC", "SMTP / journal SIEM")
+  System_Ext(fw, "Pare-feu", "Liste de blocage d'IP")
+}
+
+Rel(attacker, agent, "Injecte des lignes piégées dans les logs", "sshd")
+Rel(agent, ingest, "F1 · TB1 : lignes / messages signés", "HTTPS + HMAC")
+Rel(ingest, detect, "F2 : SecurityEvent valides", "appel")
+Rel(detect, db, "F3 · TB2 : Incident", "SQL paramétré")
+Rel(detect, smtp, "F4 · TB3 : Alert (débit limité, audité)", "SMTP/TLS")
+Rel(incidents, fw, "F5 · TB3 : bloquer une IP validée", "API")
+Rel(analyst, incidents, "F6 · TB4 : lire / trier / fermer", "HTTPS + authentification")
+Rel(incidents, db, "lit / met à jour", "SQL paramétré")
+Rel(admin, boot, "F7 · TB5 : .env, règles", "variables d'environnement")
+
+SHOW_LEGEND()
 @enduml
