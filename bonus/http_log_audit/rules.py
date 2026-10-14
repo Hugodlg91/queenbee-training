@@ -7,6 +7,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Protocol
+from urllib.parse import unquote_plus
 
 from bonus.http_log_audit.model import MAX_EXAMPLE_LENGTH, AuditError, Finding, HttpRequest
 
@@ -38,8 +39,28 @@ class AuthBruteForceRule:
         ]
 
 
-# Motif repris tel quel du script d'origine (comportement conservé pendant l'extraction).
-_LEGACY_SQLI: Final = re.compile(r"(union|select|insert|delete|drop|or|'|1=1)", re.IGNORECASE)
+# Bornes de mot et quantificateurs bornés : « /forum » n'est plus une injection, pas de ReDoS.
+_SQLI: Final = re.compile(
+    r"'\s{0,5}(?:or|and)\s{1,5}'?\w{1,20}'?\s{0,5}=?"  # ' or '1'='1
+    r"|\b(?:or|and)\s{1,5}\d{1,10}\s{0,5}=\s{0,5}\d{1,10}"  # or 1=1
+    r"|\bunion\s{1,10}(?:all\s{1,10})?select\b"
+    r"|;\s{0,5}(?:drop|delete|insert|update|shutdown)\b"
+    r"|'\s{0,5}(?:--|#)"
+    r"|\b(?:sleep|benchmark|pg_sleep)\s{0,5}\(",
+)
+_SQL_COMMENT: Final = re.compile(r"/\*[^*]{0,200}\*/")
+_URL_DECODE_PASSES: Final = 2
+
+
+def normalize_target(target: str) -> str:
+    """Ce que verra vraiment l'application : décodage URL (borné), commentaires SQL repliés."""
+    decoded = target
+    for _ in range(_URL_DECODE_PASSES):  # %2527 -> %27 -> '
+        once = unquote_plus(decoded)
+        if once == decoded:
+            break
+        decoded = once
+    return " ".join(_SQL_COMMENT.sub(" ", decoded).lower().split())
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +70,7 @@ class SqlInjectionRule:
     def evaluate(self, requests: Sequence[HttpRequest]) -> list[Finding]:
         hits: dict[str, list[HttpRequest]] = {}
         for request in requests:
-            if _LEGACY_SQLI.search(request.target):
+            if _SQLI.search(normalize_target(request.target)):
                 hits.setdefault(request.client_ip, []).append(request)
         return [
             Finding("sql_injection", ip, len(rs), rs[0].target[:MAX_EXAMPLE_LENGTH])
