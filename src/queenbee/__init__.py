@@ -1,1 +1,1 @@
-"""Queen Bee : votre code va ici (voir README et livret d'ateliers)."""
+"""Queen Bee : mini-plateforme de détection (agents -> reine -> incidents -> SOC)."""
