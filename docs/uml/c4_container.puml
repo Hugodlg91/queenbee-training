@@ -1,0 +1,10 @@
+@startuml c4_container
+!include <C4/C4_Container>
+title Queen Bee — Conteneurs et frontières de confiance (C4 niveau 2, à compléter)
+' 1. Acteurs : Person(...) et System_Ext(...)
+' 2. Une Boundary(...) par zone de confiance (TB1, TB2...)
+' 3. Container(...) / ContainerDb(...) dans chaque zone
+' 4. Rel(source, destination, "quoi", "protocole") pour chaque flux de la matrice
+Person(analyst, "Analyste SOC")
+System_Ext(agent, "Agent (abeille)", "Collecte les logs sur les hôtes")
+@enduml

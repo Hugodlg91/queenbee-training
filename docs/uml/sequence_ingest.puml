@@ -1,0 +1,15 @@
+@startuml sequence_ingest
+actor Agent
+participant "parse_agent_message" as API
+participant "DetectionService" as S
+participant "RuleSet" as R
+participant "IncidentRepository" as DB
+participant "Notifier" as N
+Agent -> API : body + signature HMAC
+API -> API : taille ≤ 4 Kio ? HMAC ok ? schéma ok ?
+API -> S : ingest([SecurityEvent])
+S -> R : evaluate(events)
+R --> S : [Alert]
+S -> DB : add(Incident)
+S -> N : notify(alert)
+@enduml
