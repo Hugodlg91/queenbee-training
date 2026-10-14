@@ -11,6 +11,9 @@ from types import ModuleType
 
 import pytest
 
+from queenbee.domain.rules import BruteForceRule
+from tests.conftest import ev
+
 LINE = "Oct 14 09:00:00 host sshd[42]: Failed password for {user} from {ip}\n"
 
 
@@ -45,3 +48,12 @@ def test_failures_spread_over_ips_trigger_nothing(legacy: ModuleType, tmp_path: 
     alerts, rows = _run(legacy, tmp_path, lines)
     assert alerts == []
     assert rows == []
+
+
+def test_new_domain_matches_legacy_behaviour(legacy: ModuleType, tmp_path: Path) -> None:
+    """Même scénario, même résultat : le refactoring n'a pas changé ce qui marchait."""
+    old_alerts, _ = _run(legacy, tmp_path, [LINE.format(user="root", ip="10.0.0.66")] * 7)
+    new_alerts = BruteForceRule(5).evaluate([ev(ip="10.0.0.66")] * 7)
+    assert [a.source_ip for a in new_alerts] == old_alerts
+    spread = [ev(ip=f"10.0.0.{i}") for i in range(4) for _ in range(4)]
+    assert BruteForceRule(5).evaluate(spread) == []
