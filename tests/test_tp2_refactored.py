@@ -206,4 +206,3 @@ def test_cli_survives_non_utf8_bytes(tmp_path: Path) -> None:
     log = tmp_path / "binary.log"
     log.write_bytes(b"\xff\xfe\x00garbage\n" + line("/a' or '1'='1").encode())
     assert main([str(log)]) == 1
-```
