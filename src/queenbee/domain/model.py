@@ -21,6 +21,7 @@ _RULE_NAME: Final = re.compile(r"[a-z][a-z0-9_]{0,31}")
 MAX_DETAIL_LENGTH: Final = 200
 
 ALLOWED_ACTIONS: Final = frozenset({"login_failed", "login_ok", "port_probe"})
+KNOWN_ROLES: Final = frozenset({"viewer", "analyst", "admin"})
 
 
 def _check_ip(value: object) -> None:
@@ -134,3 +135,20 @@ class Incident:
 
     def __repr__(self) -> str:
         return f"Incident(id={self.id}, rule={self.alert.rule!r}, status={self._status.value})"
+
+
+@dataclass(frozen=True, slots=True)
+class Principal:
+    """Qui agit : un nom d'utilisateur et ses rôles (déjà authentifié en amont)."""
+
+    user: str
+    roles: frozenset[str]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.user, str) or not _USERNAME.fullmatch(self.user):
+            raise DomainError("nom d'utilisateur invalide")
+        if not isinstance(self.roles, frozenset) or not self.roles <= KNOWN_ROLES:
+            raise DomainError("rôles invalides")
+
+    def has(self, role: str) -> bool:
+        return role in self.roles

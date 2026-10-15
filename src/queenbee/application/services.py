@@ -9,6 +9,10 @@ from queenbee.domain.model import Incident, SecurityEvent
 from queenbee.domain.rules import Rule
 
 
+class AccessDeniedError(PermissionError):
+    """Le principal n'a pas le rôle requis : l'action est refusée, sans effet."""
+
+
 class DetectionService:
     """Évalue un lot d'événements validés, ouvre un incident par alerte et prévient le SOC."""
 
