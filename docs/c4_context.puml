@@ -1,0 +1,25 @@
+@startuml c4_context
+!include <C4/C4_Context>
+title Queen Bee — Contexte (C4 niveau 1)
+
+Person(analyst, "Analyste SOC", "Trie les incidents, bloque les IP")
+Person(admin, "Administrateur", "Configure règles, seuils et secrets")
+Person_Ext(attacker, "Attaquant", "Attaque les hôtes surveillés")
+
+System(qb, "Queen Bee", "Valide les événements, détecte, ouvre et trace les incidents")
+
+System_Ext(agent, "Agents (abeilles)", "Collectent les logs sur les hôtes surveillés")
+System_Ext(feed, "Flux de menaces", "Fournisseur externe de réputation d'IP")
+System_Ext(siem, "SIEM / SOC", "Reçoit alertes et journal d'audit")
+System_Ext(fw, "Pare-feu", "Applique les blocages d'IP")
+
+Rel(attacker, agent, "Laisse des traces piégées dans les logs", "sshd")
+Rel(agent, qb, "Événements signés (TB1)", "HTTPS + HMAC-SHA256")
+Rel(feed, qb, "Indicateurs de menace (TB6)", "HTTPS")
+Rel(analyst, qb, "Consulte et trie les incidents (TB4)", "HTTPS + MFA")
+Rel(admin, qb, "Configuration et secrets (TB5)", ".env")
+Rel(qb, siem, "Alertes limitées en débit, audit (TB3)", "syslog TLS")
+Rel(qb, fw, "Blocage d'IP validée (TB3)", "API")
+
+SHOW_LEGEND()
+@enduml
