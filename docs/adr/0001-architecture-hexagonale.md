@@ -1,6 +1,6 @@
 # ADR 0001 — Architecture hexagonale : le domaine ne dépend de rien
 
-- **Statut** : accepté — 14/10/2026
+- **Statut** : accepté — 14/10/2026, complété le 15/10/2026
 - **Décideurs** : Corentin, Hugo, Praveen, Ugo
 
 ## Contexte
@@ -35,6 +35,14 @@ Le contrat est vérifié automatiquement par `import-linter` (`PYTHONPATH=src li
 3. **Couches classiques (présentation → métier → données)** : le métier dépend de la couche données,
    donc de SQLite ; on ne peut pas remplacer la base par une version mémoire dans les tests.
 
+## Un choix proportionné
+Comparaison détaillée avec une architecture microservices : `docs/comparaison_architectures.md`.
+- **Volume** : quelques dizaines d'agents, quelques milliers d'événements par minute : un seul processus suffit.
+- **Équipe** : 4 personnes, sans équipe d'exploitation pour gérer mTLS, coffre de secrets et file de messages.
+- **Délai** : 3 jours ; le monolithe hexagonal est livrable et entièrement testé dans ce délai.
+- **Porte de sortie** : grâce aux ports, un adaptateur (ex. l'API agents) pourra devenir un service séparé
+  sans toucher au domaine si le volume l'impose.
+
 ## Conséquences
 - **+** Les règles et objets du domaine se testent sans base ni réseau (`tests/test_domain.py`).
 - **+** Un objet du domaine invalide ne peut pas exister : la validation des entrées non fiables
@@ -46,6 +54,8 @@ Le contrat est vérifié automatiquement par `import-linter` (`PYTHONPATH=src li
 - **−** Les données traversent plusieurs conversions (ligne → `SecurityEvent` → `Alert` → `Incident` → ligne SQL).
 - **−** Les ports `Protocol` sont vérifiés par mypy, pas à l'exécution : sans `mypy --strict`, une
   implémentation incomplète passerait inaperçue jusqu'à l'appel.
+- **−** Un seul processus : un plantage arrête tout (ingestion, détection, notifications). On compense
+  par la validation à l'entrée et l'isolation des abonnés (`AlertBus`), pas par la redondance.
 
 ## Menaces STRIDE traitées
 - **T** (altération) sur TB1 · Intégrité : `SecurityEvent` figé et validé (IP, nom, action, fuseau).
@@ -58,5 +68,6 @@ Le contrat est vérifié automatiquement par `import-linter` (`PYTHONPATH=src li
 - `tests/test_domain.py::test_invalid_event_cannot_exist`
 - `tests/test_domain.py::test_factory_rejects_unknown_rule`
 - `tests/test_creational.py::test_service_runs_with_any_family`
-- `tests/test_services.py::test_sqlite_repo_resists_injection` (J2)
+- `tests/test_services.py::test_sqlite_repo_resists_injection`
+- `tests/test_hexagon_abuse.py::test_abuse_unauthorized_move_touches_nothing`
 - `PYTHONPATH=src lint-imports` : contrat « Architecture hexagonale : les dépendances pointent vers le domaine » KEPT
