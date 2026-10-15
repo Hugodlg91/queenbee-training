@@ -83,3 +83,28 @@ class RateLimitedNotifier:
             return
         self._sent.append(now)
         self._inner.notify(alert)
+
+
+class AlertBus:
+    """Observateur : diffuse chaque alerte à des abonnés que le service ne connaît pas.
+
+    Un abonné en panne est isolé et compté : il ne bloque ni les autres, ni la détection.
+    """
+
+    def __init__(self) -> None:
+        self._subscribers: list[Notifier] = []
+        self.failures = 0
+
+    def subscribe(self, subscriber: Notifier) -> None:
+        self._subscribers.append(subscriber)
+
+    def unsubscribe(self, subscriber: Notifier) -> None:
+        self._subscribers.remove(subscriber)
+
+    def notify(self, alert: Alert) -> None:
+        for subscriber in tuple(self._subscribers):
+            try:
+                subscriber.notify(alert)
+            except Exception:  # un abonné ne doit jamais faire tomber la diffusion
+                self.failures += 1
+                _audit_log.exception("abonné %s en échec", type(subscriber).__name__)
