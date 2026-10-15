@@ -24,3 +24,9 @@ class IncidentRepository(IncidentReader, Protocol):
 
 class Notifier(Protocol):
     def notify(self, alert: Alert) -> None: ...
+
+
+class Firewall(Protocol):
+    def block(self, ip: str) -> None: ...
+
+    def unblock(self, ip: str) -> None: ...
