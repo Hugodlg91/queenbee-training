@@ -1,0 +1,111 @@
+@startuml classes_patterns_defensifs
+title Queen Bee — patterns défensifs (J2 · A1)
+hide empty members
+skinparam classAttributeIconSize 0
+
+package domain {
+  class Principal <<value>> {
+    +user : str
+    +roles : frozenset[str]
+    +has(role) : bool
+  }
+  class Incident <<entity>> {
+    +id : UUID
+    +alert : Alert
+    +status : IncidentStatus
+    +transition_to(target)
+  }
+  note right of Incident
+    **State** : table des transitions
+    OPEN -> TRIAGED -> (CONTAINED) -> CLOSED
+    tout le reste lève DomainError
+  end note
+  class SecurityEvent <<value, frozen>>
+}
+
+package application {
+  interface IncidentReader <<Protocol>> {
+    +get(id) : Incident | None
+    +list_open() : list[Incident]
+  }
+  interface IncidentRepository <<Protocol>> {
+    +add(incident)
+    +save(incident)
+  }
+  interface Notifier <<Protocol>> {
+    +notify(alert)
+  }
+  interface Firewall <<Protocol>> {
+    +block(ip)
+    +unblock(ip)
+  }
+  class IncidentReadProxy {
+    +denied : int
+    -_authorize()
+  }
+  note bottom of IncidentReadProxy
+    **Proxy** (C) : rôle viewer/analyst vérifié
+    à chaque appel ; renvoie des copies
+  end note
+  IncidentRepository -|> IncidentReader
+  IncidentReadProxy ..|> IncidentReader
+  IncidentReadProxy o--> IncidentReader : inner
+  IncidentReadProxy --> Principal
+}
+
+package adapters.inbound {
+  class "parse_sshd_line()" as Parser <<Adapter>>
+  note bottom of Parser
+    **Adapter** (I) : taille <= 512 avant la regex,
+    fullmatch, le domaine revalide
+  end note
+  Parser ..> SecurityEvent : crée
+}
+
+package adapters.outbound {
+  class AuditedNotifier
+  class RateLimitedNotifier {
+    +dropped : int
+    -clock : Callable[[], float]
+  }
+  class AlertBus {
+    +failures : int
+    +subscribe(n)
+    +unsubscribe(n)
+  }
+  class BlockIpCommand {
+    +ip : str
+    +execute()
+    +undo()
+  }
+  class CommandHistory {
+    +run(command)
+    +undo_last()
+  }
+  class InMemoryFirewall {
+    +blocked : set[str]
+  }
+  AuditedNotifier ..|> Notifier
+  RateLimitedNotifier ..|> Notifier
+  AlertBus ..|> Notifier
+  AuditedNotifier o--> Notifier : inner
+  RateLimitedNotifier o--> Notifier : inner
+  AlertBus o--> "*" Notifier : abonnés
+  InMemoryFirewall ..|> Firewall
+  BlockIpCommand --> Firewall
+  CommandHistory o--> "*" BlockIpCommand
+  note bottom of RateLimitedNotifier
+    **Decorator** (D · P) : même interface ;
+    N alertes / fenêtre, surplus compté ;
+    horloge injectée
+  end note
+  note bottom of AlertBus
+    **Observer** (D) : un abonné en panne
+    est isolé et compté
+  end note
+  note bottom of BlockIpCommand
+    **Command** (I · P) : IP validée dans le
+    constructeur ; tracée, annulable
+  end note
+}
+@enduml
