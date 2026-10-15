@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Sequence
+from uuid import UUID
 
 from queenbee.application.ports import IncidentRepository, Notifier
-from queenbee.domain.model import Incident, SecurityEvent
+from queenbee.domain.model import DomainError, Incident, IncidentStatus, Principal, SecurityEvent
 from queenbee.domain.rules import Rule
+
+_audit_log = logging.getLogger("queenbee.audit")
 
 
 class AccessDeniedError(PermissionError):
@@ -32,3 +36,24 @@ class DetectionService:
                 notifier.notify(alert)
             created.append(incident)
         return created
+
+
+class IncidentService:
+    """Cas d'usage des analystes. Toujours : autoriser -> vérifier -> règle métier -> persister."""
+
+    REQUIRED_ROLE = "analyst"
+
+    def __init__(self, incidents: IncidentRepository) -> None:
+        self._incidents = incidents
+
+    def move(self, who: Principal, incident_id: UUID, to: IncidentStatus) -> Incident:
+        if not who.has(self.REQUIRED_ROLE):  # 1. autoriser, avant même de lire
+            _audit_log.warning("refus : %s veut passer %s en %s", who.user, incident_id, to.value)
+            raise AccessDeniedError(who.user)
+        incident = self._incidents.get(incident_id)  # 2. vérifier
+        if incident is None:
+            raise DomainError("incident introuvable")
+        incident.transition_to(to)  # 3. règle métier (State)
+        self._incidents.save(incident)  # 4. persister
+        _audit_log.info("%s a passé %s en %s", who.user, incident.id, to.value)
+        return incident
