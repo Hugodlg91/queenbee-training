@@ -14,6 +14,7 @@
 | A5 | Canal d'alerte vers le SOC (notifications) | sans lui, personne ne réagit ; saturé, il noie les vraies alertes | x | x | | |
 | A6 | Liste de blocage du pare-feu | une IP légitime bloquée = déni de service auto-infligé ; un blocage annulé = attaquant libre | x | x | | x |
 | A7 | Journal d'audit (qui a fait quoi sur un incident) | seule preuve en cas de contestation d'une action d'analyste | | x | | x |
+| A8 | Renseignement sur les menaces (flux externe, ajouté au J2) | un faux indicateur fait bloquer une IP légitime ou ignorer une vraie | | x | | |
 
 ## 2. Acteurs
 
@@ -23,6 +24,7 @@
 | Analyste SOC | oui | lit, trie, ferme les incidents ; déclenche un blocage |
 | Lecteur (viewer) | oui, limité | consulte seulement |
 | Administrateur | oui | configure règles, seuils, secrets |
+| Fournisseur du flux de menaces (J2) | partiellement | données utiles, mais format et contenu qu'on ne contrôle pas |
 | Attaquant externe | non | forge des lignes de log / messages d'agent, flood, injection (SQL, regex, nom de règle) |
 | **Agent compromis** | *semblait légitime, ne l'est plus* | possède une vraie clé : envoie des événements bien signés mais mensongers ou en masse |
 | Analyste malveillant ou compte volé | *semblait légitime* | ferme un incident sans triage, nie l'avoir fait |
@@ -44,6 +46,8 @@
                                                     └──F5 bloquer IP─┊──▶ (Pare-feu)
  (Admin) ──F7 .env / règles──▶ (Démarrage : Builder Settings + Factory de règles)
        TB5 ┊
+ (Flux de menaces) ──F8 indicateurs──▶ (Couche anti-corruption : ThreatFeedTranslator)
+                TB6 ┊
 ```
 
 | Frontière | Sépare | Justification |
@@ -53,6 +57,7 @@
 | **TB3** | application ↔ systèmes externes (SMTP, pare-feu) | actions à effet réel ; une commande pare-feu construite par chaîne = injection de commande |
 | **TB4** | analystes ↔ service incidents | change de niveau de privilège : chaque appel doit porter une identité et un rôle |
 | **TB5** | administrateur / environnement ↔ démarrage | les secrets et la configuration entrent ici ; une valeur mal formée ne doit pas démarrer l'appli |
+| **TB6** (J2) | fournisseur de renseignement ↔ reine | format et vocabulaire d'un tiers : ils ne doivent pas pénétrer le domaine (couche anti-corruption) |
 
 ## 4. STRIDE par flux traversant une frontière
 
@@ -63,6 +68,8 @@
 | F4 Alert → SOC (TB3) | | | | IP / comptes dans un mail non chiffré | tempête d'alertes qui noie le SOC | | EX-07 |
 | F5 Blocage → Pare-feu (TB3) | | IP piégée `1.2.3.4; iptables -F` | blocage non tracé | | blocage d'IP légitime | injection de commande système | EX-08 |
 | F6 Analyste → Incidents (TB4) | compte volé | incident fermé sans triage | analyste qui nie la fermeture | lecture par un compte sans rôle | | viewer qui ferme un incident | EX-06, EX-07 |
+| F8 Flux de menaces → ACL (TB6, J2) | faux fournisseur | indicateur piégé (`evil.com`, `1.2.3.4/0`), niveau inconnu | | | flux énorme | indicateur qui ferait bloquer une IP interne | EX-09 |
+| F2' Agent compromis → Ingestion (TB1, J2) | vraie clé, faux contenu | message signé mais mal formé, champ en trop ou dupliqué | | | | `is_admin` ajouté au message | EX-10 |
 | F7 Admin → Démarrage (TB5) | | règle chargée par nom arbitraire (`__import__('os')`), seuil `True` | | clé affichée dans `print(settings)` / les logs | appli démarrée sans clé | exécution de code via la config | EX-05, EX-03 |
 
 Menaces écartées (non crédibles dans le périmètre) : attaque physique sur les hôtes, compromission du système d'exploitation de la reine.
@@ -120,6 +127,19 @@ EX-08  Une règle DOIT être créée uniquement depuis un nom présent dans le r
        Preuve : tests/test_domain.py::test_factory_rejects_unknown_rule,
                 tests/test_domain.py::test_factory_rejects_bool_threshold,
                 tests/test_services.py::test_command_undo
+
+EX-09  (J2) Tout indicateur venu du flux de menaces DOIT passer par la couche anti-corruption :
+       un indicateur qui n'est pas une adresse IP ou un niveau de risque inconnu DOIT être rejeté (DomainError),
+       et le score DOIT rester dans [0, 100].
+       Menace : T sur TB6 · Propriété : Intégrité
+       Preuve : tests/test_adapters.py::test_anti_corruption_layer_translates_and_rejects,
+                tests/test_hexagon_abuse.py::test_abuse_threat_feed_garbage_rejected
+
+EX-10  (J2) Un message correctement signé (agent compromis) DOIT quand même être rejeté s'il a un champ
+       en trop, manquant, dupliqué, non textuel ou une valeur invalide pour le domaine.
+       Menace : T et E sur TB1 · Propriété : Intégrité
+       Preuve : tests/test_adapters.py::test_abuse_extra_field_rejected,
+                tests/test_hexagon_abuse.py::test_abuse_signed_but_malformed_message_rejected
 ```
 
 ### Couverture
@@ -127,11 +147,10 @@ EX-08  Une règle DOIT être créée uniquement depuis un nom présent dans le r
 | STRIDE | Exigences |
 |---|---|
 | S | EX-01 |
-| T | EX-03, EX-04 |
+| T | EX-03, EX-04, EX-09, EX-10 |
 | R | EX-07 |
 | I | EX-05 |
 | D | EX-02, EX-07 |
-| E | EX-06, EX-08 |
+| E | EX-06, EX-08, EX-10 |
 
-État au rendu J1 : les preuves de `tests/test_domain.py` et `tests/test_creational*.py` sont vertes ;
-celles de `tests/test_services.py` et `tests/test_adapters.py` sont les spécifications du J2.
+État au rendu J2 : toutes les preuves citées sont vertes (`make check` vert).
