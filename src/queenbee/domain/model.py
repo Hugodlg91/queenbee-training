@@ -152,3 +152,18 @@ class Principal:
 
     def has(self, role: str) -> bool:
         return role in self.roles
+
+
+@dataclass(frozen=True, slots=True)
+class ThreatIndicator:
+    """Renseignement sur une IP (venu d'un flux externe, après traduction)."""
+
+    ip: str
+    score: int
+
+    def __post_init__(self) -> None:
+        _check_ip(self.ip)  # « evil.com » n'est pas une IP : refusé
+        if isinstance(self.score, bool) or not isinstance(self.score, int):
+            raise DomainError("score entier attendu")
+        if not 0 <= self.score <= 100:
+            raise DomainError("score hors de [0, 100]")
