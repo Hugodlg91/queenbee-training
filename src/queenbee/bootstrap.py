@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 
 from queenbee.adapters.inbound.log_parser import parse_sshd_line
+from queenbee.adapters.outbound.notifiers import AuditedNotifier, RateLimitedNotifier
 from queenbee.application.ports import IncidentRepository
 from queenbee.application.services import DetectionService
 from queenbee.config import Settings
@@ -57,5 +58,7 @@ def build_rules(settings: Settings) -> Rule:
 def build_app(settings: Settings, factory: ComponentFactory | None = None) -> QueenBee:
     factory = factory or ProdFactory(settings.db_path)
     repository = factory.repository()
-    detection = DetectionService(build_rules(settings), repository, [factory.notifier()])
+    # Chaque alerte est tracée (Preuve), puis limitée en débit avant le SOC (Disponibilité).
+    notifier = AuditedNotifier(RateLimitedNotifier(factory.notifier()))
+    detection = DetectionService(build_rules(settings), repository, [notifier])
     return QueenBee(detection, repository)
