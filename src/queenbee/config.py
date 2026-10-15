@@ -22,7 +22,7 @@ class Settings:
     """Figé, et le secret n'apparaît ni dans repr(), ni dans str(), ni dans les logs."""
 
     hmac_key: bytes = field(repr=False)
-    db_path: str = "queenbee.db"
+    db_path: str = ":memory:"  # la prod fixe QUEENBEE_DB ; les tests ne créent aucun fichier
     bf_threshold: int = 5
 
     def __post_init__(self) -> None:
@@ -42,7 +42,7 @@ class SettingsBuilder:
 
     def __init__(self) -> None:
         self._hmac_key: bytes | None = None
-        self._db_path = "queenbee.db"
+        self._db_path = ":memory:"
         self._bf_threshold = 5
 
     def hmac_key(self, key: bytes) -> Self:
