@@ -73,3 +73,9 @@ def test_faille5_analyst_closes_once() -> None:
         vuln.close_incident(analyst, incident_id)  # déjà fermé
     with pytest.raises(DomainError):
         vuln.close_incident(analyst, 999_999)  # introuvable
+
+
+def test_faille6_service_answers_anyone() -> None:
+    # Aucun jeton, aucun certificat : n'importe quel processus du réseau obtient une réponse.
+    assert vuln.call_enrichment_service("10.0.0.1")["reputation"] == "unknown"
+    assert vuln.call_enrichment_service("'; DROP TABLE x;--")  # et sans même valider l'entrée
