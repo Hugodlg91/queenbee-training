@@ -4,11 +4,32 @@
 Sept failles d'architecture à exploiter (en local), corriger, puis vérifier avec bandit/pip-audit.
 Chaque faille porte un numéro FAILLE-n ; la correction de référence est dans src/queenbee.
 """
+import os
 import pickle
 import re
 import sqlite3
+from collections.abc import Mapping
 
-API_KEY = "qb-admin-2026"                           # FAILLE-1 : secret en dur et partagé par tous les services
+from queenbee.domain.model import DomainError
+
+# FAILLE-1 corrigée : plus de secret dans le code. Une clé PAR SERVICE, injectée au démarrage
+# par l'environnement (.env, coffre), sans valeur par défaut : sans clé, le service refuse de démarrer.
+SERVICES = frozenset({"admin", "agent", "enrichment"})
+MIN_KEY_BYTES = 32
+
+
+def service_key(service: str, env: Mapping[str, str] | None = None) -> str:
+    if service not in SERVICES:
+        raise DomainError("service inconnu")
+    env = os.environ if env is None else env
+    key = env.get(f"QUEENBEE_{service.upper()}_KEY", "")
+    try:
+        valid = len(bytes.fromhex(key)) >= MIN_KEY_BYTES
+    except ValueError:
+        valid = False
+    if not valid:
+        raise DomainError(f"clé du service {service} absente ou trop courte")
+    return key
 
 USER_RE = re.compile(r"^([a-zA-Z0-9]+\s?)*$")       # FAILLE-2 : quantificateurs imbriqués -> ReDoS
 
@@ -39,5 +60,5 @@ def call_enrichment_service(ip: str) -> dict:
     return {"ip": ip, "reputation": "unknown"}
 
 
-def check_token(token: str) -> bool:
-    return token == API_KEY                           # FAILLE-7 : comparaison non constante (timing)
+def check_token(token: str, expected: str) -> bool:
+    return token == expected                          # FAILLE-7 : comparaison non constante (timing)
