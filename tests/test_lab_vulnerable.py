@@ -42,6 +42,9 @@ def test_faille2_redos_fixed_time_is_bounded() -> None:
     assert not vuln.is_valid_username("a" * 65)  # trop long : refusé avant la regex
 
 
-def test_faille4_sql_injection_dumps_table() -> None:
+def test_faille4_sql_injection_returns_nothing() -> None:
     vuln.conn.execute("INSERT INTO incident (ip, status) VALUES ('10.0.0.1', 'open')")
-    assert vuln.find_incidents("x' OR '1'='1")  # renvoie TOUTES les lignes
+    assert vuln.find_incidents("x' OR '1'='1") == []  # inversé : l'injection est une simple chaîne
+    assert vuln.find_incidents("10.0.0.1")  # la recherche normale fonctionne toujours
+    vuln.find_incidents("x'; DROP TABLE incident;--")
+    assert vuln.conn.execute("SELECT count(*) FROM incident").fetchone()[0] >= 1  # table intacte
