@@ -154,3 +154,32 @@ EX-10  (J2) Un message correctement signé (agent compromis) DOIT quand même ê
 | E | EX-06, EX-08, EX-10 |
 
 État au rendu J2 : toutes les preuves citées sont vertes (`make check` vert).
+
+## 6. Revue de sécurité J3 : les 7 failles de la variante de laboratoire
+
+Méthode en six temps : lire (points d'entrée) → supposer → exploiter (test `@pytest.mark.lab`) →
+corriger dans la couche d'origine → prouver (test inversé, bandit, pip-audit) → tracer (ADR).
+Code : `labs/vulnerable_queenbee.py` · tests : `tests/test_lab_vulnerable.py`, `tests/test_lab_review.py`.
+
+| # | Faille | Couche | Frontière | STRIDE | DICP | Correction | ADR | Test de non-régression |
+|---|---|---|---|---|---|---|---|---|
+| 1 | secret en dur partagé par tous les services | configuration | TB5 | S, I | C | une clé par service, lue dans l'environnement, sans valeur par défaut | 0002 | `test_faille1_no_hardcoded_secret_one_key_per_service` |
+| 2 | regex à retour arrière exponentiel (ReDoS) | adaptateur | TB1 | D | D | taille bornée avant la regex, motif sans répétition imbriquée | 0003 | `test_faille2_redos_fixed_time_is_bounded` |
+| 3 | désérialisation `pickle` d'un message reçu | adaptateur | TB1 | T, E | I | JSON au schéma strict, objet du domaine validé | 0004 | `test_faille3_pickle_payload_rejected_without_running` |
+| 4 | SQL construit par f-string | persistance | TB2 | T, I, E | C, I | requête paramétrée | 0005 | `test_faille4_sql_injection_returns_nothing` |
+| 5 | aucune autorisation dans le service | application | TB4 | E, R | I, P | rôle vérifié en premier dans le cas d'usage | 0006 | `test_faille5_only_an_analyst_can_close` |
+| 6 | services qui ne s'authentifient pas | infrastructure | entre services | S, I | C, I | appel signé HMAC avec la clé du service appelé (+ mTLS en production) | 0007 | `test_faille6_unauthenticated_caller_refused` |
+| 7 | jeton comparé avec `==` (temps variable) | sécurité | TB1, entre services | S, I | C | `hmac.compare_digest` | 0008 | `test_faille7_token_compared_in_constant_time` |
+
+```
+EX-11  (J3) Aucune donnée reçue NE DOIT être désérialisée par un format qui exécute du code (pickle) ;
+       toute comparaison de secret DOIT être faite en temps constant ; tout service DOIT authentifier
+       son appelant avant de répondre.
+       Menace : T, E, S sur TB1 et entre services · Propriété : Intégrité, Confidentialité
+       Preuve : tests/test_lab_vulnerable.py::test_faille3_pickle_payload_rejected_without_running,
+                tests/test_lab_review.py::test_faille7_token_compared_in_constant_time,
+                tests/test_lab_review.py::test_faille6_unauthenticated_caller_refused
+```
+
+Risque résiduel accepté : l'ancienne clé `qb-admin-2026` reste dans l'historique Git ; elle est
+considérée comme compromise et révoquée (un secret commité ne s'efface pas vraiment).
