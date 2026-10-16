@@ -1,0 +1,45 @@
+@startuml c4_composants
+!include <C4/C4_Component>
+title Queen Bee — Composants du cœur (C4 niveau 3)
+
+System_Ext(agent, "Agents", "Messages signés HMAC")
+Person(analyst, "Analyste SOC")
+System_Ext(feed, "Flux de menaces")
+ContainerDb(db, "Base incidents", "SQLite")
+System_Ext(siem, "SIEM / SOC")
+System_Ext(fw, "Pare-feu")
+
+Container_Boundary(qb, "Cœur Queen Bee (architecture hexagonale)") {
+  Component(boot, "bootstrap", "Racine de composition + Facade QueenBee", "Crée et relie les objets ; compte les lignes rejetées")
+  Component(api, "agent_api", "Adaptateur entrant", "≤ 4 Kio, HMAC temps constant, schéma JSON strict")
+  Component(parser, "log_parser", "Adaptateur entrant", "Ligne sshd bornée -> SecurityEvent")
+  Component(acl, "threat_feed", "Couche anti-corruption", "Indicateur externe -> ThreatIndicator")
+  Component(detect, "DetectionService", "Cas d'usage", "Événements -> RuleSet -> Incident + Alert")
+  Component(incidents, "IncidentService", "Cas d'usage", "Autoriser -> vérifier -> règle -> persister")
+  Component(proxy, "IncidentReadProxy", "Proxy (application)", "Lecture contrôlée par rôle, copies")
+  Component(domain, "domain", "Entités, règles", "SecurityEvent, Incident (State), RuleSet, Principal")
+  Component(repo, "repositories", "Adaptateur sortant", "Port IncidentRepository ; SQL paramétré")
+  Component(notif, "notifiers", "Adaptateurs sortants", "Audited -> RateLimited -> Notifier ; AlertBus")
+  Component(resp, "response", "Adaptateur sortant", "BlockIpCommand + CommandHistory, port Firewall")
+}
+
+Rel(agent, api, "Messages signés", "HTTPS (TB1)")
+Rel(feed, acl, "Indicateurs", "HTTPS (TB6)")
+Rel(analyst, incidents, "Trie / ferme", "HTTPS + MFA (TB4)")
+Rel(analyst, proxy, "Consulte", "HTTPS + MFA (TB4)")
+Rel(boot, parser, "ingest_lines")
+Rel(api, detect, "SecurityEvent")
+Rel(parser, detect, "SecurityEvent")
+Rel(detect, domain, "évalue les règles")
+Rel(incidents, domain, "transition_to")
+Rel(detect, repo, "add(Incident)")
+Rel(incidents, repo, "get / save")
+Rel(proxy, repo, "get / list_open")
+Rel(detect, notif, "notify(Alert)")
+Rel(incidents, resp, "bloquer une IP")
+Rel(repo, db, "SQL paramétré", "TB2")
+Rel(notif, siem, "Alertes limitées, audit", "syslog TLS (TB3)")
+Rel(resp, fw, "block / unblock", "mTLS (TB3)")
+
+SHOW_LEGEND()
+@enduml
