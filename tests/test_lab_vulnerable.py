@@ -9,17 +9,27 @@ import time
 import pytest
 
 from labs import vulnerable_queenbee as vuln
+from queenbee.domain.model import DomainError
 
 pytestmark = pytest.mark.lab
 
 
-def test_faille3_pickle_executes_code_on_load(capsys: pytest.CaptureFixture[str]) -> None:
+def test_faille3_pickle_payload_rejected_without_running(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class Payload:  # charge utile INOFFENSIVE : un simple print
         def __reduce__(self) -> tuple[object, tuple[str]]:
             return (print, ("PWNED: code exécuté pendant la désérialisation",))
 
-    vuln.receive_agent_message(pickle.dumps(Payload()))
-    assert "PWNED" in capsys.readouterr().out  # la simple lecture a exécuté du code
+    # Inversé : la même charge est refusée, et rien n'a été exécuté.
+    with pytest.raises(DomainError):
+        vuln.receive_agent_message(pickle.dumps(Payload()))
+    assert "PWNED" not in capsys.readouterr().out
+    message = (
+        b'{"source_ip": "10.0.0.66", "username": "root", "action": "login_failed",'
+        b' "timestamp": "2026-10-16T09:00:00+00:00"}'
+    )
+    assert vuln.receive_agent_message(message).source_ip == "10.0.0.66"
 
 
 def test_faille2_redos_fixed_time_is_bounded() -> None:
