@@ -1,0 +1,5 @@
+# Faux positifs vérifiés à la main (J3) :
+# - .env.example : valeur vide, gitleaks lit la ligne suivante (QUEENBEE_DB=...)
+# - tests : clé de test bytes(range(32)), pas un secret
+de1dab4a92a62ff4913da48d53555a5f84aadf4d:.env.example:generic-api-key:2
+bab7b92de22f17aaa9b129c5bfc3d93983fa85f2:tests/test_creational_abuse.py:generic-api-key:102
