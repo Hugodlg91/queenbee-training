@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from labs import vulnerable_queenbee as vuln
+from queenbee.adapters.inbound.agent_api import UnauthenticatedError
 from queenbee.application.services import AccessDeniedError
 from queenbee.domain.model import DomainError, Principal
 
@@ -75,7 +76,36 @@ def test_faille5_analyst_closes_once() -> None:
         vuln.close_incident(analyst, 999_999)  # introuvable
 
 
-def test_faille6_service_answers_anyone() -> None:
-    # Aucun jeton, aucun certificat : n'importe quel processus du réseau obtient une réponse.
-    assert vuln.call_enrichment_service("10.0.0.1")["reputation"] == "unknown"
-    assert vuln.call_enrichment_service("'; DROP TABLE x;--")  # et sans même valider l'entrée
+@pytest.mark.parametrize(
+    "signature",
+    [
+        "",  # aucun jeton
+        "0" * 64,  # jeton inventé
+        None,
+    ],
+)
+def test_faille6_unauthenticated_caller_refused(signature: str) -> None:
+    key = vuln.service_key("enrichment", ENV)
+    with pytest.raises(UnauthenticatedError):  # inversé : sans preuve d'identité, pas de réponse
+        vuln.call_enrichment_service("10.0.0.1", signature, key)
+
+
+def test_faille6_other_service_key_refused() -> None:
+    enrichment, admin = vuln.service_key("enrichment", ENV), vuln.service_key("admin", ENV)
+    with pytest.raises(UnauthenticatedError):
+        vuln.call_enrichment_service("10.0.0.1", vuln.sign_request("10.0.0.1", admin), enrichment)
+    with pytest.raises(UnauthenticatedError):  # signature d'une autre IP : pas rejouable
+        vuln.call_enrichment_service(
+            "10.0.0.2", vuln.sign_request("10.0.0.1", enrichment), enrichment
+        )
+
+
+def test_faille6_authenticated_caller_served_and_input_checked() -> None:
+    key = vuln.service_key("enrichment", ENV)
+    assert vuln.call_enrichment_service("10.0.0.1", vuln.sign_request("10.0.0.1", key), key) == {
+        "ip": "10.0.0.1",
+        "reputation": "unknown",
+    }
+    hostile = "'; DROP TABLE x;--"
+    with pytest.raises(DomainError):
+        vuln.call_enrichment_service(hostile, vuln.sign_request(hostile, key), key)
