@@ -4,13 +4,14 @@
 Sept failles d'architecture à exploiter (en local), corriger, puis vérifier avec bandit/pip-audit.
 Chaque faille porte un numéro FAILLE-n ; la correction de référence est dans src/queenbee.
 """
+import json
 import os
-import pickle
 import re
 import sqlite3
 from collections.abc import Mapping
+from datetime import datetime
 
-from queenbee.domain.model import DomainError
+from queenbee.domain.model import DomainError, SecurityEvent
 
 # FAILLE-1 corrigée : plus de secret dans le code. Une clé PAR SERVICE, injectée au démarrage
 # par l'environnement (.env, coffre), sans valeur par défaut : sans clé, le service refuse de démarrer.
@@ -40,8 +41,27 @@ conn = sqlite3.connect(":memory:")
 conn.execute("CREATE TABLE incident (id INTEGER PRIMARY KEY, ip TEXT, status TEXT)")
 
 
-def receive_agent_message(raw: bytes):
-    return pickle.loads(raw)                          # FAILLE-3 : désérialisation non sûre (RCE)
+MAX_MESSAGE_BYTES = 4096
+MESSAGE_FIELDS = frozenset({"source_ip", "username", "action", "timestamp"})
+
+
+def receive_agent_message(raw: bytes) -> SecurityEvent:
+    # FAILLE-3 corrigée : on accepte des DONNÉES (JSON), jamais du code (pickle exécute à la lecture).
+    if not isinstance(raw, bytes) or len(raw) > MAX_MESSAGE_BYTES:
+        raise DomainError("message absent ou trop gros")
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DomainError("message non JSON") from exc
+    if not isinstance(data, dict) or set(data) != MESSAGE_FIELDS:
+        raise DomainError("schéma du message invalide")
+    if not all(isinstance(value, str) for value in data.values()):
+        raise DomainError("champ non textuel")
+    try:
+        timestamp = datetime.fromisoformat(data["timestamp"])
+    except ValueError as exc:
+        raise DomainError("horodatage invalide") from exc
+    return SecurityEvent(data["source_ip"], data["username"], data["action"], timestamp)
 
 
 def is_valid_username(name: str) -> bool:
