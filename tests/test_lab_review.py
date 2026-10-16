@@ -109,3 +109,23 @@ def test_faille6_authenticated_caller_served_and_input_checked() -> None:
     hostile = "'; DROP TABLE x;--"
     with pytest.raises(DomainError):
         vuln.call_enrichment_service(hostile, vuln.sign_request(hostile, key), key)
+
+
+class SpyToken(str):
+    """Jeton espion : enregistre si on le compare avec `==` (arrêt au 1er caractère faux)."""
+
+    compared_with_eq = False
+
+    def __eq__(self, other: object) -> bool:
+        SpyToken.compared_with_eq = True
+        return str.__eq__(self, other)
+
+    __hash__ = str.__hash__
+
+
+def test_faille7_token_compared_with_eq_leaks_timing() -> None:
+    SpyToken.compared_with_eq = False
+    vuln.check_token(SpyToken("a" * 64), "b" * 64)
+    # `==` sort dès le premier octet faux : le temps de réponse révèle le préfixe correct,
+    # un attaquant devine le jeton caractère par caractère.
+    assert SpyToken.compared_with_eq
