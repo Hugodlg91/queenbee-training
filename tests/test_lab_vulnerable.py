@@ -22,13 +22,14 @@ def test_faille3_pickle_executes_code_on_load(capsys: pytest.CaptureFixture[str]
     assert "PWNED" in capsys.readouterr().out  # la simple lecture a exécuté du code
 
 
-def test_faille2_redos_is_exponential() -> None:
-    def cost(n: int) -> float:
-        t = time.perf_counter()
-        vuln.is_valid_username("a" * n + "!")
-        return time.perf_counter() - t
-
-    assert cost(22) > 4 * cost(18)  # +4 caractères => temps x16 en théorie
+def test_faille2_redos_fixed_time_is_bounded() -> None:
+    # Inversé : avant, +4 caractères multipliaient le temps par 16 (cost(22) > 4 * cost(18)).
+    start = time.perf_counter()
+    for n in range(1, 1_000):
+        assert not vuln.is_valid_username("a" * n + "!")
+    assert time.perf_counter() - start < 0.1  # 1 000 entrées piégées : quelques millisecondes
+    assert vuln.is_valid_username("jean dupont")
+    assert not vuln.is_valid_username("a" * 65)  # trop long : refusé avant la regex
 
 
 def test_faille4_sql_injection_dumps_table() -> None:
