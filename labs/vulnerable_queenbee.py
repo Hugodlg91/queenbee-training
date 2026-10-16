@@ -112,4 +112,8 @@ def call_enrichment_service(ip: str, signature: str, key: str) -> dict[str, str]
 
 
 def check_token(token: str, expected: str) -> bool:
-    return token == expected                          # FAILLE-7 : comparaison non constante (timing)
+    # FAILLE-7 corrigée : comparaison en temps constant ; le temps de réponse ne dit plus
+    # combien de caractères étaient justes.
+    if not isinstance(token, str) or not isinstance(expected, str):
+        return False
+    return hmac.compare_digest(token.encode(), expected.encode())
