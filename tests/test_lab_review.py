@@ -123,9 +123,17 @@ class SpyToken(str):
     __hash__ = str.__hash__
 
 
-def test_faille7_token_compared_with_eq_leaks_timing() -> None:
+def test_faille7_token_compared_in_constant_time() -> None:
     SpyToken.compared_with_eq = False
-    vuln.check_token(SpyToken("a" * 64), "b" * 64)
-    # `==` sort dès le premier octet faux : le temps de réponse révèle le préfixe correct,
-    # un attaquant devine le jeton caractère par caractère.
-    assert SpyToken.compared_with_eq
+    assert not vuln.check_token(SpyToken("a" * 64), "b" * 64)
+    # Inversé : plus de `==` (qui sort au premier octet faux) ; compare_digest lit tout.
+    assert not SpyToken.compared_with_eq
+
+
+@pytest.mark.parametrize(
+    ("token", "expected", "ok"),
+    [("a" * 64, "a" * 64, True), ("a" * 63 + "b", "a" * 64, False), ("", "a" * 64, False)],
+)
+def test_faille7_check_token_still_decides_correctly(token: str, expected: str, ok: bool) -> None:
+    assert vuln.check_token(token, expected) is ok
+    assert vuln.check_token(None, expected) is False  # type: ignore[arg-type]
