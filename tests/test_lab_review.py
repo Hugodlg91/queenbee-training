@@ -9,11 +9,33 @@ from pathlib import Path
 import pytest
 
 from labs import vulnerable_queenbee as vuln
+from queenbee.domain.model import DomainError
 
 pytestmark = pytest.mark.lab
 
 
-def test_faille1_secret_hardcoded_and_shared() -> None:
+KEY_A, KEY_B = "aa" * 32, "bb" * 32
+ENV = {"QUEENBEE_ADMIN_KEY": KEY_A, "QUEENBEE_ENRICHMENT_KEY": KEY_B}
+
+
+def test_faille1_no_hardcoded_secret_one_key_per_service() -> None:
     source = Path(vuln.__file__).read_text()
-    assert '"qb-admin-2026"' in source  # quiconque lit le dépôt a la clé
-    assert vuln.check_token("qb-admin-2026")  # et elle ouvre la porte
+    assert "qb-admin-2026" not in source  # plus aucun secret dans le code
+    assert not hasattr(vuln, "API_KEY")
+    admin, enrichment = vuln.service_key("admin", ENV), vuln.service_key("enrichment", ENV)
+    assert admin != enrichment  # une clé par service : en voler une n'ouvre pas les autres
+    assert not vuln.check_token(admin, enrichment)
+
+
+@pytest.mark.parametrize(
+    ("service", "env"),
+    [
+        ("admin", {}),  # pas de clé : pas de valeur par défaut, le service refuse de démarrer
+        ("admin", {"QUEENBEE_ADMIN_KEY": "qb-admin-2026"}),  # pas de l'hexadécimal
+        ("admin", {"QUEENBEE_ADMIN_KEY": "aa" * 8}),  # trop courte
+        ("database", {"QUEENBEE_DATABASE_KEY": KEY_A}),  # service inconnu
+    ],
+)
+def test_faille1_missing_or_weak_key_refused(service: str, env: dict[str, str]) -> None:
+    with pytest.raises(DomainError):
+        vuln.service_key(service, env)
