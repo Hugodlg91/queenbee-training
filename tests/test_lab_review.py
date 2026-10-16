@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from labs import vulnerable_queenbee as vuln
-from queenbee.domain.model import DomainError
+from queenbee.application.services import AccessDeniedError
+from queenbee.domain.model import DomainError, Principal
 
 pytestmark = pytest.mark.lab
 
@@ -52,7 +53,23 @@ def _status(incident_id: int) -> str:
     return str(row[0])
 
 
-def test_faille5_anyone_can_close_an_incident() -> None:
+@pytest.mark.parametrize(
+    "intruder",
+    ["mallory", Principal("mallory", frozenset()), Principal("bob", frozenset({"viewer"}))],
+)
+def test_faille5_only_an_analyst_can_close(intruder: object) -> None:
     incident_id = _new_incident()
-    vuln.close_incident("mallory", incident_id)  # un inconnu, sans aucun rôle
-    assert _status(incident_id) == "closed"  # l'incident est fermé : l'attaque disparaît du SOC
+    with pytest.raises(AccessDeniedError):
+        vuln.close_incident(intruder, incident_id)  # type: ignore[arg-type]
+    assert _status(incident_id) == "open"  # inversé : refus, et rien n'a bougé
+
+
+def test_faille5_analyst_closes_once() -> None:
+    incident_id = _new_incident()
+    analyst = Principal("alice", frozenset({"analyst"}))
+    vuln.close_incident(analyst, incident_id)
+    assert _status(incident_id) == "closed"
+    with pytest.raises(DomainError):
+        vuln.close_incident(analyst, incident_id)  # déjà fermé
+    with pytest.raises(DomainError):
+        vuln.close_incident(analyst, 999_999)  # introuvable
