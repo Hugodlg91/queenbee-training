@@ -11,7 +11,8 @@ import sqlite3
 from collections.abc import Mapping
 from datetime import datetime
 
-from queenbee.domain.model import DomainError, SecurityEvent
+from queenbee.application.services import AccessDeniedError
+from queenbee.domain.model import DomainError, Principal, SecurityEvent
 
 # FAILLE-1 corrigée : plus de secret dans le code. Une clé PAR SERVICE, injectée au démarrage
 # par l'environnement (.env, coffre), sans valeur par défaut : sans clé, le service refuse de démarrer.
@@ -75,9 +76,16 @@ def find_incidents(ip: str) -> list[tuple[int, str, str]]:
     return conn.execute("SELECT id, ip, status FROM incident WHERE ip = ?", (ip,)).fetchall()
 
 
-def close_incident(user: str, incident_id: int) -> None:
-    # FAILLE-5 : aucune vérification d'autorisation dans la couche service
-    conn.execute("UPDATE incident SET status='closed' WHERE id=?", (incident_id,))
+def close_incident(who: Principal, incident_id: int) -> None:
+    # FAILLE-5 corrigée : le contrôle est DANS le cas d'usage (pas dans l'interface), et en premier.
+    if not isinstance(who, Principal) or not who.has("analyst"):  # 1. autoriser
+        raise AccessDeniedError(getattr(who, "user", "inconnu"))
+    row = conn.execute("SELECT status FROM incident WHERE id = ?", (incident_id,)).fetchone()
+    if row is None:  # 2. vérifier
+        raise DomainError("incident introuvable")
+    if row[0] == "closed":  # 3. règle métier
+        raise DomainError("incident déjà fermé")
+    conn.execute("UPDATE incident SET status = 'closed' WHERE id = ?", (incident_id,))  # 4. persister
 
 
 def call_enrichment_service(ip: str) -> dict:
