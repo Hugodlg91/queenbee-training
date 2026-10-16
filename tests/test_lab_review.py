@@ -39,3 +39,20 @@ def test_faille1_no_hardcoded_secret_one_key_per_service() -> None:
 def test_faille1_missing_or_weak_key_refused(service: str, env: dict[str, str]) -> None:
     with pytest.raises(DomainError):
         vuln.service_key(service, env)
+
+
+def _new_incident() -> int:
+    cursor = vuln.conn.execute("INSERT INTO incident (ip, status) VALUES ('10.0.0.5', 'open')")
+    assert cursor.lastrowid is not None
+    return cursor.lastrowid
+
+
+def _status(incident_id: int) -> str:
+    row = vuln.conn.execute("SELECT status FROM incident WHERE id = ?", (incident_id,)).fetchone()
+    return str(row[0])
+
+
+def test_faille5_anyone_can_close_an_incident() -> None:
+    incident_id = _new_incident()
+    vuln.close_incident("mallory", incident_id)  # un inconnu, sans aucun rôle
+    assert _status(incident_id) == "closed"  # l'incident est fermé : l'attaque disparaît du SOC
