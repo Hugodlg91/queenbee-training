@@ -31,7 +31,10 @@ def service_key(service: str, env: Mapping[str, str] | None = None) -> str:
         raise DomainError(f"clé du service {service} absente ou trop courte")
     return key
 
-USER_RE = re.compile(r"^([a-zA-Z0-9]+\s?)*$")       # FAILLE-2 : quantificateurs imbriqués -> ReDoS
+# FAILLE-2 corrigée : plus de répétition imbriquée ((x+)*). Les mots sont séparés par UNE espace
+# obligatoire : une seule façon de découper l'entrée, donc un temps linéaire.
+USER_RE = re.compile(r"[a-zA-Z0-9]+(?: [a-zA-Z0-9]+)*")
+MAX_USERNAME_LENGTH = 64
 
 conn = sqlite3.connect(":memory:")
 conn.execute("CREATE TABLE incident (id INTEGER PRIMARY KEY, ip TEXT, status TEXT)")
@@ -42,7 +45,9 @@ def receive_agent_message(raw: bytes):
 
 
 def is_valid_username(name: str) -> bool:
-    return USER_RE.match(name) is not None
+    if not isinstance(name, str) or len(name) > MAX_USERNAME_LENGTH:  # borner AVANT la regex
+        return False
+    return USER_RE.fullmatch(name) is not None
 
 
 def find_incidents(ip: str):
