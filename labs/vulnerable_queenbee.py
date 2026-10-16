@@ -4,6 +4,9 @@
 Sept failles d'architecture à exploiter (en local), corriger, puis vérifier avec bandit/pip-audit.
 Chaque faille porte un numéro FAILLE-n ; la correction de référence est dans src/queenbee.
 """
+import hashlib
+import hmac
+import ipaddress
 import json
 import os
 import re
@@ -11,6 +14,7 @@ import sqlite3
 from collections.abc import Mapping
 from datetime import datetime
 
+from queenbee.adapters.inbound.agent_api import UnauthenticatedError
 from queenbee.application.services import AccessDeniedError
 from queenbee.domain.model import DomainError, Principal, SecurityEvent
 
@@ -88,8 +92,22 @@ def close_incident(who: Principal, incident_id: int) -> None:
     conn.execute("UPDATE incident SET status = 'closed' WHERE id = ?", (incident_id,))  # 4. persister
 
 
-def call_enrichment_service(ip: str) -> dict:
-    # FAILLE-6 : appel inter-services sans authentification mutuelle (ni mTLS, ni jeton)
+def sign_request(ip: str, key: str) -> str:
+    """Côté appelant : signe la requête avec la clé du service d'enrichissement."""
+    return hmac.new(bytes.fromhex(key), ip.encode(), hashlib.sha256).hexdigest()
+
+
+def call_enrichment_service(ip: str, signature: str, key: str) -> dict[str, str]:
+    # FAILLE-6 corrigée : le service authentifie l'appelant AVANT de répondre (HMAC avec sa clé
+    # de service). En production : mTLS entre services en plus (voir infrastructure).
+    if not isinstance(ip, str) or not isinstance(signature, str):
+        raise UnauthenticatedError("appel non authentifié")
+    if not check_token(signature, sign_request(ip, key)):
+        raise UnauthenticatedError("appel non authentifié")
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError as exc:
+        raise DomainError("IP invalide") from exc
     return {"ip": ip, "reputation": "unknown"}
 
 
